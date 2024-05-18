@@ -1,26 +1,38 @@
 import streamlit as st
-import numpy as np
+import pandas as pd
 from mediapipe.tasks import python
 from mediapipe.tasks.python import text
 from tensorflow.keras.models import load_model
-from tensorflow.keras.layers import TextVectorization
 from tensorflow.keras.preprocessing.sequence import pad_sequences
-from tensorflow.keras.datasets import imdb
-import tensorflow as tf
+from tensorflow.keras.preprocessing.text import Tokenizer
 
-base_options = python.BaseOptions(model_asset_path="model.tflite")
-options = text.TextClassifierOptions(base_options=base_options)
-classifier = text.TextClassifier.create_from_options(options)
+# Load the AWE model
+@st.cache_resource(max_entries=1)
+def load_awe_model():
+    base_options = python.BaseOptions(model_asset_path="model.tflite")
+    options = text.TextClassifierOptions(base_options=base_options)
+    return text.TextClassifier.create_from_options(options)
 
-base_options_bert = python.BaseOptions(model_asset_path="model_BERT.tflite")
-options_bert = text.TextClassifierOptions(base_options=base_options_bert)
-classifier_bert = text.TextClassifier.create_from_options(options_bert)
+# Load the BERT model
+@st.cache_resource(max_entries=1)
+def load_bert_model():
+    base_options_bert = python.BaseOptions(model_asset_path="model_BERT.tflite")
+    options_bert = text.TextClassifierOptions(base_options=base_options_bert)
+    return text.TextClassifier.create_from_options(options_bert)
 
-loaded_model = load_model('my_model.h5')
-loaded_model1 = load_model('sentiment_model.h5')
-word_index = imdb.get_word_index()
+# Load the CNN model
+@st.cache_resource(max_entries=1)
+def load_cnn_model():
+    model = load_model("sentiment_analysis_model.h5")
+    tokenizer = Tokenizer()
+    df = pd.read_csv('a1_IMDB_Dataset.csv')
+    reviews = df['review'].tolist()
+    tokenizer.fit_on_texts(reviews)
+    sequences = tokenizer.texts_to_sequences(reviews)
+    max_len = max([len(seq) for seq in sequences])
+    return model, tokenizer, max_len
 
-# Tạo ứng dụng Streamlit
+# Streamlit app
 st.title('Text Classification App')
 
 user_input = st.text_area("Enter your text here:")
@@ -28,39 +40,33 @@ user_input = st.text_area("Enter your text here:")
 # create selectbox for model selection
 model_choice = st.selectbox('Select Model', ('AWE', 'CNN', 'BERT'))
 
-if st.button('Classify'):
-    if user_input:
-        # switch model
-        if model_choice == 'AWE':
-            classification_result = classifier.classify(user_input)
-            top_category = classification_result.classifications[0].categories[0]
-            st.write(f'Input: {user_input}')
-            # if category_name = 1 then Negative else Positive
-            category = 'Positive' if top_category.category_name == '1' else 'Negative'
-            st.write(f'Category: {category}')
-            st.write(f'Score: {top_category.score * 100:.2f}%')
-        elif model_choice == 'CNN':
-            new_texts = [user_input]
-            max_len = 200
-            new_sequences = [np.array([word_index[word] if word in word_index else 0 for word in text.split()]) for text in new_texts]
-            new_sequences = pad_sequences(new_sequences, maxlen=max_len)
-            predictions = loaded_model1.predict(new_sequences)
-            sentiment = "Positive" if predictions > 0.5 else "Negative"
-            st.write(f"Text: {user_input}")
-            st.write(f"Predicted sentiment: {sentiment}")
-            st.write(f'Score: {predictions * 100:.2f}%')
-            st.write()
-
-            # Dự đoán cảm xúc của các đoạn văn mới
-            predictions = loaded_model.predict(new_sequences)
-        elif model_choice == 'BERT':
-            classification_result = classifier_bert.classify(user_input)
-            top_category = classification_result.classifications[0].categories[0]
-            st.write(f'Input: {user_input}')
-            # if category_name = 1 then Negative else Positive
-            category = 'Positive' if top_category.category_name == '1' else 'Negative'
-            st.write(f'Category: {category}')
-            st.write(f'Score: {top_category.score * 100:.2f}%')
-
-    else:
-        st.write("Please enter some text to classify.")
+if st.button('Classify') and user_input:
+    if model_choice == 'AWE':
+        awe_model = load_awe_model()
+        classification_result = awe_model.classify(user_input)
+        top_category = classification_result.classifications[0].categories[0]
+        st.write(f'Input: {user_input}')
+        category = 'Positive' if top_category.category_name == '1' else 'Negative'
+        st.write(f'Category: {category}')
+        st.write(f'Score: {top_category.score * 100:.2f}%')
+    elif model_choice == 'CNN':
+        loaded_model_cnn, cnn_tokenizer, max_len = load_cnn_model()
+        new_reviews = [user_input]
+        new_sequences = cnn_tokenizer.texts_to_sequences(new_reviews)
+        new_X = pad_sequences(new_sequences, maxlen=max_len)
+        predictions = loaded_model_cnn.predict(new_X)
+        sentiment = "positive" if predictions > 0.5 else "negative"
+        score = predictions[0] * 100
+        st.write(f'Input: {user_input}')
+        st.write(f"Predicted Sentiment: {sentiment}")
+        st.write(f"Score: {score[0]:.2f}%")
+    elif model_choice == 'BERT':
+        bert_model = load_bert_model()
+        classification_result = bert_model.classify(user_input)
+        top_category = classification_result.classifications[0].categories[0]
+        st.write(f'Input: {user_input}')
+        category = 'Positive' if top_category.category_name == '1' else 'Negative'
+        st.write(f'Category: {category}')
+        st.write(f'Score: {top_category.score * 100:.2f}%')
+else:
+    st.write("Please enter some text to classify.")
