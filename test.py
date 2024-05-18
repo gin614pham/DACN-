@@ -1,8 +1,11 @@
 import streamlit as st
+import numpy as np
 from mediapipe.tasks import python
 from mediapipe.tasks.python import text
 from tensorflow.keras.models import load_model
 from tensorflow.keras.layers import TextVectorization
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.datasets import imdb
 import tensorflow as tf
 
 base_options = python.BaseOptions(model_asset_path="model.tflite")
@@ -14,6 +17,8 @@ options_bert = text.TextClassifierOptions(base_options=base_options_bert)
 classifier_bert = text.TextClassifier.create_from_options(options_bert)
 
 loaded_model = load_model('my_model.h5')
+loaded_model1 = load_model('sentiment_model.h5')
+word_index = imdb.get_word_index()
 
 # Tạo ứng dụng Streamlit
 st.title('Text Classification App')
@@ -31,18 +36,29 @@ if st.button('Classify'):
             top_category = classification_result.classifications[0].categories[0]
             st.write(f'Input: {user_input}')
             # if category_name = 1 then Negative else Positive
-            category = 'Positive' if top_category.category_name == '0' else 'Negative'
+            category = 'Positive' if top_category.category_name == '1' else 'Negative'
             st.write(f'Category: {category}')
             st.write(f'Score: {top_category.score * 100:.2f}%')
         elif model_choice == 'CNN':
+            new_texts = [user_input]
+            max_len = 200
+            new_sequences = [np.array([word_index[word] if word in word_index else 0 for word in text.split()]) for text in new_texts]
+            new_sequences = pad_sequences(new_sequences, maxlen=max_len)
+            predictions = loaded_model1.predict(new_sequences)
+            sentiment = "Positive" if predictions > 0.5 else "Negative"
+            st.write(f"Text: {user_input}")
+            st.write(f"Predicted sentiment: {sentiment}")
+            st.write(f'Score: {predictions * 100:.2f}%')
+            st.write()
 
-            pass
+            # Dự đoán cảm xúc của các đoạn văn mới
+            predictions = loaded_model.predict(new_sequences)
         elif model_choice == 'BERT':
             classification_result = classifier_bert.classify(user_input)
             top_category = classification_result.classifications[0].categories[0]
             st.write(f'Input: {user_input}')
             # if category_name = 1 then Negative else Positive
-            category = 'Positive' if top_category.category_name == '0' else 'Negative'
+            category = 'Positive' if top_category.category_name == '1' else 'Negative'
             st.write(f'Category: {category}')
             st.write(f'Score: {top_category.score * 100:.2f}%')
 
